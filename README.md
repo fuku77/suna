@@ -2,7 +2,7 @@
 
 **Suna is:**
 
-- ✔️ A Static Blog Processor/Generator.
+- ✔️ A Static Blog Generator.
 - ✔️ A Markdown to HTML parser.
 - ✔️ An HTML-Templating Engine.
 - ✔️ Minimal.
