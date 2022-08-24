@@ -8,6 +8,8 @@
 - ✔️ Minimal.
 - ✔️ Written in POSIX-Compliant Shell, making it very portable.
 
+:warning: The parser is not complete. Tables, code blocks etc. will not work.
+
 # 📖 Installation & Usage
 
 #### Clone the git repository.
@@ -27,7 +29,7 @@ Simply run the script:
 You should see some new files & folders inside `root`.
 You can take a look at the files to make sure it generated correctly.
 <br>
-Now you can change the `root` directory to where you want to host your web server by using `--output DIR` or by editing `config`
+You can change the `root` directory to where you want to host your web server by using `--output DIR` or by editing `config`
 
 # ⚙ Configuration
 
