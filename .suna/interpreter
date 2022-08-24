@@ -1,0 +1,72 @@
+#!/usr/bin/env sh
+# https://github.com/fuku77/
+
+# Usage: interpreter INPUT_FILE
+
+# Headers
+h1='/^# / s_.*_<h1>&</h1>_ ; /^<h1>#/ s_# __'
+h2='/^## / s_.*_<h2>&</h2>_ ; /^<h2>#/ s_## __'
+h3='/^### / s_.*_<h3>&</h3>_ ; /^<h3>#/ s_### __'
+h4='/^#### / s_.*_<h4>&</h4>_ ; /^<h4>#/ s_#### __'
+h5='/^##### / s_.*_<h5>&</h5>_ ; /^<h5>#/ s_##### __'
+h6='/^###### / s_.*_<h6>&</h6>_ ; /^<h6>#/ s_###### __'
+
+# Links
+a='s_[^!]\[\(.*\)\](\(.*\))_<a href=\2>\1</a>_g'
+img='s_\!\[\(.*\)\](\(.*\))_<img src="\2" alt="\1"/>_g'
+
+# no clue how to work with multi-line streams in sed so 
+# lists & codeblocks disabled fn
+
+# Lists
+li='s_^\([[:blank:]]*\)[-*+] \(.*\)_\1<li>\2</li>_ ; s_^\([[:blank:]]*\)[0-9]. \(.*\)_\1<li>\2</li>_'
+# ol= 
+# ul='s_<li>.*<\li>\f_<ul>\f&\f</ul>_'
+
+# Formatting
+
+# codeblock='/```.*(\n)*.*```/ s_```\(.*\)```_<pre><code>\1</code></pre>_'
+# codeblock='/^```(\n)*.*(\n)*.*(\n)*```/{$!{N;s_^```\((\n)*.*(\n)*.*(\n)*\)```_<pre><code>\1</code></pre>_;ty;P;D;:y}}'
+
+# codeblock='/^```/,/```/ s_.*_<pre><code>&</code></pre>_'
+
+p=' /^.*-->\|^[<]/ !s_.\{1,\}_<p>&</p>_g'
+strong='s_[*_]\{2\}\([^_*]*\)[*_]\{2\}_<strong>\1</strong>_g'
+i='s_\*\([^*]*\)\*_<i>\1</i>_g'
+#em='s_\_\{1\}\([^_]*\)\_\{1\}_<em>\1</em>_g'
+s='s_~\{2\}\(.*\)~\{2\}_<s>\1</s>_g'
+code='s_`\{1,2\}\([^`]\{1,\}\)`\{1,2\}_<code>\1</code>_g'
+
+quote='/^> / s_^> \([^`]*\)_<blockquote><p>\1</p></blockquote>_'
+
+# Specials
+hr='s_^-\{3,\}$_<hr/>_'
+br='s_\\r\\n_<br>_g'
+
+o=$(sed \
+    \
+    -e  "$h1" \
+    -e  "$h2" \
+    -e  "$h3" \
+    -e  "$h4" \
+    -e  "$h5" \
+    -e  "$h6" \
+    \
+    -e  "$a" \
+    -e  "$img" \
+    \
+    -e  "$li" \
+    \
+    -e  "$hr" \
+    -e  "$br" \
+    \
+    -e  "$quote" \
+    -e  "$code" \
+    -e  "$p" \
+    -e  "$strong" \
+    -e  "$i" \
+    -e  "$s" \
+    < "$1" \
+    )
+
+echo "$o"

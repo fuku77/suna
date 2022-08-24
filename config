@@ -1,0 +1,29 @@
+#!/usr/bin/env sh
+#https://github.com/fuku77
+
+# See `README.md`
+
+# Default output directory
+# Use $HOME instead of ~
+export outputDir="$baseDir/root"
+
+# The default template file.
+export defTemplateFile="$sunaDir/template.html"
+
+export logFile="$sunaDir/suna.log"
+
+# Default action to perform when no action arguments are given.
+# 0 - help text
+# 1 - clean
+# 2 - process source directory and apply main functions
+export action=2
+
+# maximum lines in logfile
+export logSize=256
+
+# Default verbosity.
+# 0 quiet (none)
+# 1 normal (warning/error)
+# 2 verbose (all)
+export verbose=1
+

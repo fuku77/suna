@@ -1,0 +1,270 @@
+#!/usr/bin/env sh
+# https://github.com/fuku77/
+
+baseDir="$(cd "$(dirname -- "$0")" && pwd)"
+sunaDir="$baseDir/.suna"
+srcDir="$baseDir/src"
+
+# Source config
+. "$baseDir"/config
+
+###################
+#  Error Logging 
+
+# Usage: log "DEBUG|INFO|WARNING|ERROR" "foo"
+log () {
+    loglevel=$1
+    content=$2
+
+    case $loglevel in
+        INFO )
+            [ "$verbose" -gt 1 ] && echo "$loglevel: $content"
+            ;;
+        WARNING|ERROR )
+            [ "$verbose" -gt 0 ] && echo "$loglevel: $content"
+            ;;
+        DEBUG ) ;;
+        * ) 
+            return 1
+            ;;
+    esac
+
+    # Log everything to logFile regardless of loglevel
+    echo "$(date +'%s | %d/%m/%y | %H:%M:%S') | $(printf "%-6s" "$loglevel") |: $content" >> "$logFile"
+    
+
+    # If log file reached the logsize, 
+    # this keeps it that size by cutting excess lines from the start
+    logLength=$(wc -l < "$logFile")
+    [ "$logLength" -gt "$logSize" ] && sed -i "$((logLength - logSize))d" "$logFile"
+}
+
+#
+###################
+
+##################
+#  Help & Usage 
+
+usage="Usage: $0 [-vq] [-h|c|p] [-o DIR] [--verbose --quiet] [--help|clean|process] [--output DIR]"
+help="
+suna - minimalistic, static HTML-templating processor written entirely in POSIX-compliant shell (https://github.com/fuku77/suna)
+
+$usage
+
+Options:
+    -v --verbose     More informative output
+    -q --quiet       Suppress all output
+
+    -o --output DIR  Output directory. 'root' by default
+
+Actions:
+    -h --help        Shows this help text
+    -c --clean       Clean generated files
+    -p --process     Process src files and create HTML pages
+" 
+
+#
+##################
+
+############################
+#  Command-line Arguments 
+
+while getopts "hvqcpo-:" arg; do
+    case $arg in
+        h )
+            action=0
+            ;;
+        v )
+            verbose=2
+            ;;
+        q )
+            verbose=0
+            ;;
+        c )
+            action=1
+            ;;
+        p )
+            action=2
+            ;;
+        o )
+            [ -z "$(eval "echo \"\$$OPTIND\"")" ] && echo "$usage" && exit 2;
+            outputDir="$(eval "echo \"\$$OPTIND\"")"
+        ;;
+        - )
+            case $OPTARG in
+                help ) 
+                    action=0
+                    ;;
+                verbose )
+                    verbose=2
+                    ;;
+                quiet )
+                    verbose=0
+                    ;;
+                clean )
+                    action=1
+                    ;;
+                process )
+                    action=2
+                    ;;
+                output )
+                    [ -z "$(eval "echo \"\$$OPTIND\"")" ] && echo "$usage" && exit 2;
+                    outputDir="$(eval "echo \"\$$OPTIND\"")"
+                    ;;
+                * )
+                    echo "$usage"
+                    exit 2
+                    ;;
+            esac
+            ;;
+        *)
+            echo "$usage"
+            exit 2
+            ;;
+    esac
+done
+
+#
+############################
+
+############
+#  Checks
+
+[ ! -d "$outputDir" ] && { mkdir -p "$outputDir" > /dev/null 2>&1 || { log "ERROR" "Output directory not valid." && exit 1; } }
+[ ! -d "$srcDir" ] && log "ERROR" "Source directory does not exist." && exit 1;
+[ ! -d "$sunaDir" ] && log "ERROR" "Suna directory does not exist." && exit 1;
+[ ! -f "$sunaDir"/interpreter ] && log "ERROR" "Suna directory must contain the interpreter script." && exit 1;
+[ ! -f "$defTemplateFile" ] && log "ERROR" "Default template file does not exist." && exit 1;
+
+#
+############
+
+####################
+#  Main Functions 
+
+clean_tmp () {
+    log "INFO" "Removing temporary files..."
+    rm -rf "$sunaDir"/gen.tmp "$sunaDir"/lp.tmp
+}
+
+cleanup () {
+    log "INFO" "Emptying output directory..."
+    rm -rf "${outputDir:?}"/*
+    clean_tmp
+}
+
+copy_structure () {
+    mkdir -p "$outputDir"
+
+    log "DEBUG" "srcDir: $srcDir"
+    log "DEBUG" "outputDir: $outputDir"
+    log "INFO" "Copying file structure from $(basename "$srcDir") to $(basename "$outputDir")..."
+
+    find "$srcDir"/* > "${sunaDir:?}"/lp.tmp
+    while IFS= read -r f
+    do
+        fStripped="${f#"$srcDir"/}"
+        # Folders
+        [ -d "$f" ] && mkdir -p "$outputDir/$fStripped" && continue
+
+        # Markdown Files
+        {   
+            [ "$(echo "${fStripped##*.}" | tr '[:lower:]' '[:upper:]')" = "MD" ] ||
+            [ "$(echo "${fStripped##*.}" | tr '[:lower:]' '[:upper:]')" = "MARKDOWN" ]          
+        } && touch "$outputDir/${fStripped%.*}.html" && continue
+
+        # Other Files
+        cp "$f" "$outputDir/$fStripped"
+
+    done < "${sunaDir:?}"/lp.tmp
+}
+
+generate_page () {
+    find "$srcDir"/* -type f \( -iname '*.md' -o -iname '*.markdown' \) > "${sunaDir:?}"/lp.tmp
+    while IFS= read -r f
+    do
+        tmp="${f#"$srcDir"/}"
+        htmlFile="$outputDir/${tmp%.*}.html" # corresponding html file to be created
+
+        # Parse markdown to html using suna's interpreter, send it to tmp file
+        log "INFO" "Parsing Markdown file: ${f#"$srcDir"/}"        
+        parse_markdown "$f" > "$sunaDir/gen.tmp"
+
+        # Get any file rules from the MD file, or use fallbacks 
+        # sets $fileTemplate
+        # sets $pageTitle
+        parse_rules_from_file "$f"
+
+        log "DEBUG" "pageTitle: $pageTitle"
+        log "DEBUG" "template: $fileTemplate"
+        log "DEBUG" "srcFile: $f"
+        log "DEBUG" "htmlFile: $htmlFile"
+
+        log "INFO" "Creating HTML file using template ${fileTemplate#"$sunaDir"/}: ${htmlFile#"$outputDir"/}"
+        
+        # Create html file using $fileTemplate
+        cp "$fileTemplate" "$htmlFile"
+
+        # Set the macros in $htmlFile to their values
+        set_macros_in_file "$htmlFile"
+
+        # Remove rules from $htmlFile file
+        sed -i '/^<!--\ *{\ *$/,/^\ *}\ *-->$/ s/.*//' "$htmlFile"
+
+    done < "${sunaDir:?}"/lp.tmp
+    
+    clean_tmp
+}
+
+## ! Most of the functions below are for use in conjunction inside generate_page, 
+## ! For example set_macros_in_file using $pageTitle which is defined in parse_rules_from_file
+
+# Usage: parse_markdown "filepath"
+parse_markdown () {
+    "$sunaDir"/interpreter "$1"
+}
+
+parse_rules_from_file () {
+    # If file has a template specified, use that.
+    fileTemplate="$sunaDir/$(sed -n '/^<!--\ *{\ *$/,/^\ *}\ *-->$/ s_\ *!template "\(.*\)"_\1_p' "$1")"
+    [ "$fileTemplate" = "$sunaDir/" ] && fileTemplate="$defTemplateFile"
+
+    # If file has a title specified, use that. else, use the first header. else, use file name.
+    pageTitle="$(sed -n '/^<!--\ *{\ *$/,/^\ *}\ *-->$/ s_\ *!title "\(.*\)"_\1_p' "$1")"
+    [ -z "$pageTitle" ] && pageTitle="$(sed -n '/^#\{1,6\} / s/^#\{1,6\} \(.*\)/\1/p' "$1" | head -1)"
+    [ -z "$pageTitle" ] && pageTitle="$(basename "${1%.*}")" 
+}
+
+set_macros_in_file () {
+    # Set page content
+    sed -i -e "/{{\ *CONTENT\ *}}/{r $sunaDir/gen.tmp" -e "d}" "$1"
+    # Set page title 
+    sed -i "s/{{\ *TITLE\ *}}/$pageTitle/g" "$1"
+}
+
+#
+####################
+
+####################
+#  Execute Action 
+
+case $action in
+    0)
+        echo "$help"
+        exit 0
+        ;;
+    1)
+        cleanup
+        exit 0
+        ;;
+    2)
+        log "DEBUG" "--------------------------------------------------------------------------------------"
+        cleanup
+        copy_structure
+        generate_page
+        exit 0
+        ;;
+esac
+
+#
+####################

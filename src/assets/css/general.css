@@ -1,0 +1,15 @@
+body {
+    background-color:black;
+}
+
+div.main {
+    background-color:blueviolet;
+}
+
+p {
+    color:aliceblue;
+}
+
+* {
+    color:aqua;
+}
