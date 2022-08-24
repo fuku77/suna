@@ -1,4 +1,4 @@
-# 🪷 suna - static blog processor
+# 🪷 suna - static blog generator
 
 **Suna is:**
 
