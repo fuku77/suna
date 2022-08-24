@@ -47,7 +47,7 @@ log () {
 
 usage="Usage: $0 [-vq] [-h|c|p] [-o DIR] [--verbose --quiet] [--help|clean|process] [--output DIR]"
 help="
-suna - minimalistic, static HTML-templating processor written entirely in POSIX-compliant shell (https://github.com/fuku77/suna)
+suna - minimalistic, static HTML-templating blog generator written entirely in POSIX-compliant shell (https://github.com/fuku77/suna)
 
 $usage
 
