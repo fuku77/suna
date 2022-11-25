@@ -3,9 +3,12 @@
 
 # See `README.md`
 
-# Default output directory
 # Use $HOME instead of ~
+# Default output directory
 export outputDir="$baseDir/root"
+
+# Default source/input directory
+export srcDir="$baseDir/src"
 
 # The default template file.
 export defTemplateFile="$sunaDir/template.html"

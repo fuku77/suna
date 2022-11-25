@@ -3,7 +3,10 @@
 
 baseDir="$(cd "$(dirname -- "$0")" && pwd)"
 sunaDir="$baseDir/.suna"
-srcDir="$baseDir/src"
+
+logTmp="$sunaDir"/log.tmp
+genTmp="$sunaDir"/gen.tmp
+loopTmp="$sunaDir"/lp.tmp
 
 # Source config
 . "$baseDir"/config
@@ -16,27 +19,32 @@ log () {
     loglevel=$1
     content=$2
 
+    # Log everything to log file regardless of log level
+    echo "$(date +'%s | %d/%m/%y | %H:%M:%S') | $(printf "%-6s" "$loglevel") |: $content" >> "$logFile"
+    
+    # Keep log file at the max size if it goes over it 
+    logLength=$(wc -l < "$logFile")
+    [ "$logLength" -gt "$logSize" ] && tail -"$logSize" "$logFile" > "$logTmp" && cat "$logTmp" > "$logFile"
+    rm -f "$logTmp"
+
     case $loglevel in
+        ERROR  )
+            [ "$verbose" -ge 1 ] && echo "$(tput setaf 1)$loglevel$(tput setaf 15): $content"
+            exit 1
+            ;;
+        WARNING )
+            [ "$verbose" -ge 1 ] && echo "$(tput setaf 3)$loglevel:$(tput setaf 15) $content"
+            ;;
         INFO )
-            [ "$verbose" -gt 1 ] && echo "$loglevel: $content"
+            [ "$verbose" -ge 2 ] && echo "$(tput setaf 4)$loglevel:$(tput setaf 15) $content"
             ;;
-        WARNING|ERROR )
-            [ "$verbose" -gt 0 ] && echo "$loglevel: $content"
+        DEBUG ) 
+            [ "$verbose" -ge 3 ] && echo "$(tput setaf 2)$loglevel:$(tput setaf 15) $content"
             ;;
-        DEBUG ) ;;
         * ) 
             return 1
             ;;
     esac
-
-    # Log everything to logFile regardless of loglevel
-    echo "$(date +'%s | %d/%m/%y | %H:%M:%S') | $(printf "%-6s" "$loglevel") |: $content" >> "$logFile"
-    
-
-    # If log file reached the logsize, 
-    # this keeps it that size by cutting excess lines from the start
-    logLength=$(wc -l < "$logFile")
-    [ "$logLength" -gt "$logSize" ] && sed -i "$((logLength - logSize))d" "$logFile"
 }
 
 #
@@ -45,17 +53,19 @@ log () {
 ##################
 #  Help & Usage 
 
-usage="Usage: $0 [-vq] [-h|c|p] [-o DIR] [--verbose --quiet] [--help|clean|process] [--output DIR]"
+usage="Usage: $0 [ -h|c|p ] [ -v|q ] [ --debug ] [ -o DIR -i DIR ]"
 help="
 suna - minimalistic, static HTML-templating blog generator written entirely in POSIX-compliant shell (https://github.com/fuku77/suna)
 
 $usage
 
 Options:
-    -v --verbose     More informative output
+    -v --verbose     Be more verbose
     -q --quiet       Suppress all output
+       --debug       Set log level to DEBUG
 
     -o --output DIR  Output directory. 'root' by default
+    -i --input DIR   Input directory. 'src' by default
 
 Actions:
     -h --help        Shows this help text
@@ -69,7 +79,7 @@ Actions:
 ############################
 #  Command-line Arguments 
 
-while getopts "hvqcpo-:" arg; do
+while getopts "hvqcpo:i:-:" arg; do
     case $arg in
         h )
             action=0
@@ -87,8 +97,13 @@ while getopts "hvqcpo-:" arg; do
             action=2
             ;;
         o )
-            [ -z "$(eval "echo \"\$$OPTIND\"")" ] && echo "$usage" && exit 2;
-            outputDir="$(eval "echo \"\$$OPTIND\"")"
+            # Option is missing an argument
+            [ -z "$OPTARG" ] && echo "$usage" && exit 2;
+            outputDir="$OPTARG"
+        ;;
+        i )
+            [ -z "$OPTARG" ] && echo "$usage" && exit 2;
+            srcDir="$OPTARG"
         ;;
         - )
             case $OPTARG in
@@ -101,6 +116,9 @@ while getopts "hvqcpo-:" arg; do
                 quiet )
                     verbose=0
                     ;;
+                debug )
+                    verbose=3
+                    ;;
                 clean )
                     action=1
                     ;;
@@ -108,8 +126,13 @@ while getopts "hvqcpo-:" arg; do
                     action=2
                     ;;
                 output )
+                    # ${!OPTIND} is not posix-compliant so we use this instead to get the argument
                     [ -z "$(eval "echo \"\$$OPTIND\"")" ] && echo "$usage" && exit 2;
                     outputDir="$(eval "echo \"\$$OPTIND\"")"
+                    ;;
+                input )
+                    [ -z "$(eval "echo \"\$$OPTIND\"")" ] && echo "$usage" && exit 2;
+                    srcDir="$(eval "echo \"\$$OPTIND\"")"
                     ;;
                 * )
                     echo "$usage"
@@ -130,11 +153,19 @@ done
 ############
 #  Checks
 
-[ ! -d "$outputDir" ] && { mkdir -p "$outputDir" > /dev/null 2>&1 || { log "ERROR" "Output directory not valid." && exit 1; } }
-[ ! -d "$srcDir" ] && log "ERROR" "Source directory does not exist." && exit 1;
-[ ! -d "$sunaDir" ] && log "ERROR" "Suna directory does not exist." && exit 1;
-[ ! -f "$sunaDir"/interpreter ] && log "ERROR" "Suna directory must contain the interpreter script." && exit 1;
-[ ! -f "$defTemplateFile" ] && log "ERROR" "Default template file does not exist." && exit 1;
+[ ! -d "$outputDir" ] && { mkdir -p "$outputDir" > /dev/null 2>&1 || log "ERROR" "Output directory not valid."; }
+
+[ "$srcDir" = "$outputDir" ] && log "WARNING" "Input directory is the same as the output directory. Weird things might happen.\nHit enter to continue or Ctrl+C to exit." && 
+    read _;
+
+[ ! -d "$srcDir" ] && log "ERROR" "Input/Source directory does not exist."
+
+[ ! "$(ls -A "$srcDir")" ] && log "ERROR" "Input/Source directory is empty."
+
+[ ! -d "$sunaDir" ] && log "ERROR" "Suna directory does not exist."
+[ ! -f "$sunaDir"/interpreter ] && log "ERROR" "Suna's markdown parser is missing."
+
+[ ! -f "$defTemplateFile" ] && log "ERROR" "Default template file does not exist."
 
 #
 ############
@@ -144,7 +175,7 @@ done
 
 clean_tmp () {
     log "INFO" "Removing temporary files..."
-    rm -rf "$sunaDir"/gen.tmp "$sunaDir"/lp.tmp
+    rm -rf "$genTmp" "$loopTmp" "$logTmp"
 }
 
 cleanup () {
@@ -154,65 +185,71 @@ cleanup () {
 }
 
 copy_structure () {
+    f="${1:?}"
+    fStripped="${f#"$srcDir/"}"
+    
     mkdir -p "$outputDir"
 
-    log "DEBUG" "srcDir: $srcDir"
-    log "DEBUG" "outputDir: $outputDir"
-    log "INFO" "Copying file structure from $(basename "$srcDir") to $(basename "$outputDir")..."
+    # Folders
+    [ -d "$f" ] && 
+        {
+            log "DEBUG" "Found folder '$fStripped'. Creating '$outputDir/$fStripped'."
+            mkdir -p "$outputDir/$fStripped"
+            return
+        }
 
-    find "$srcDir"/* > "${sunaDir:?}"/lp.tmp
-    while IFS= read -r f
-    do
-        fStripped="${f#"$srcDir"/}"
-        # Folders
-        [ -d "$f" ] && mkdir -p "$outputDir/$fStripped" && continue
+    # Markdown Files
+    # Check if markdown
+    [ "$(echo "${fStripped##*.}" | sed -n '/^[mM][dD]$\|^[mM][aA][rR][kK][dD][oO][wW][nN]$/p')" ] &&
+        { 
+            log "DEBUG" "Found markdown file '$fStripped'. Creating '${fStripped%.*}.html'."
+            touch "$outputDir/${fStripped%.*}.html"
+            return; 
+        }
 
-        # Markdown Files
-        {   
-            [ "$(echo "${fStripped##*.}" | tr '[:lower:]' '[:upper:]')" = "MD" ] ||
-            [ "$(echo "${fStripped##*.}" | tr '[:lower:]' '[:upper:]')" = "MARKDOWN" ]          
-        } && touch "$outputDir/${fStripped%.*}.html" && continue
-
-        # Other Files
-        cp "$f" "$outputDir/$fStripped"
-
-    done < "${sunaDir:?}"/lp.tmp
+    # Other Files
+    log "DEBUG" "Found regular file '$f'. Copying."
+    cp "$f" "$outputDir/$fStripped"
 }
 
 generate_page () {
-    find "$srcDir"/* -type f \( -iname '*.md' -o -iname '*.markdown' \) > "${sunaDir:?}"/lp.tmp
-    while IFS= read -r f
-    do
-        tmp="${f#"$srcDir"/}"
-        htmlFile="$outputDir/${tmp%.*}.html" # corresponding html file to be created
+    f=${1:?}
+    fStripped="${f#"$srcDir/"}"
 
-        # Parse markdown to html using suna's interpreter, send it to tmp file
-        log "INFO" "Parsing Markdown file: ${f#"$srcDir"/}"        
-        parse_markdown "$f" > "$sunaDir/gen.tmp"
+    # Only operate on files.
+    [ -d "$f" ] && return
 
-        # Get any file rules from the MD file, or use fallbacks 
-        # sets $fileTemplate
-        # sets $pageTitle
-        parse_rules_from_file "$f"
+    # Only operate on markdown files.
+    [ "$(echo "${fStripped##*.}" | sed -n '/^[mM][dD]$\|^[mM][aA][rR][kK][dD][oO][wW][nN]$/p')" ] || return
 
-        log "DEBUG" "pageTitle: $pageTitle"
-        log "DEBUG" "template: $fileTemplate"
-        log "DEBUG" "srcFile: $f"
-        log "DEBUG" "htmlFile: $htmlFile"
+    tmp="${f#"$srcDir/"}"
+    outFile="$outputDir/${tmp%.*}.html" # corresponding html file to be created
 
-        log "INFO" "Creating HTML file using template ${fileTemplate#"$sunaDir"/}: ${htmlFile#"$outputDir"/}"
-        
-        # Create html file using $fileTemplate
-        cp "$fileTemplate" "$htmlFile"
+    # Parse markdown to html using suna's interpreter, send it to tmp file
+    log "INFO" "Parsing Markdown file: '$fStripped'" 
+    parse_markdown "$f" > "$genTmp"
 
-        # Set the macros in $htmlFile to their values
-        set_macros_in_file "$htmlFile"
+    # Get any file rules from the MD file, or use fallbacks 
+    # sets $fileTemplate
+    # sets $pageTitle
+    parse_rules_from_file "$f"
 
-        # Remove rules from $htmlFile file
-        sed -i '/^<!--\ *{\ *$/,/^\ *}\ *-->$/ s/.*//' "$htmlFile"
+    log "DEBUG" "pageTitle: '$pageTitle'"
+    log "DEBUG" "template: '$fileTemplate'"
+    log "DEBUG" "srcFile: '$f'"
+    log "DEBUG" "outFile: '$outFile'"
 
-    done < "${sunaDir:?}"/lp.tmp
+    log "INFO" "Creating HTML file using template '${fileTemplate#"$sunaDir/"}': '${outFile#"$outputDir/"}'"
     
+    # Create html file using $fileTemplate
+    cp "$fileTemplate" "$outFile"
+
+    # Set the macros in $outFile to their values
+    set_macros_in_file "$outFile"
+
+    # Remove rules from $outFile file
+    sed -i '/^<!--\ *{\ *$/,/^\ *}\ *-->$/ s/.*//' "$outFile"
+
     clean_tmp
 }
 
@@ -237,7 +274,7 @@ parse_rules_from_file () {
 
 set_macros_in_file () {
     # Set page content
-    sed -i -e "/{{\ *CONTENT\ *}}/{r $sunaDir/gen.tmp" -e "d}" "$1"
+    sed -i -e "/{{\ *CONTENT\ *}}/{r $genTmp" -e "d}" "$1"
     # Set page title 
     sed -i "s/{{\ *TITLE\ *}}/$pageTitle/g" "$1"
 }
@@ -260,8 +297,13 @@ case $action in
     2)
         log "DEBUG" "--------------------------------------------------------------------------------------"
         cleanup
-        copy_structure
-        generate_page
+        log "INFO" "Copying file structure from '$(basename "$srcDir")' to '$(basename "$outputDir")'..."
+        find "$srcDir"/* > "$loopTmp"
+        while IFS= read -r f
+        do
+            copy_structure "$f"
+            generate_page "$f"
+        done < "$loopTmp"
         exit 0
         ;;
 esac
