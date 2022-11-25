@@ -2,6 +2,7 @@
 
 **Suna is:**
 
+- ✔️ Not to be used for practical use, just a fun project.
 - ✔️ A static website generator.
 - ✔️ A Markdown to HTML parser.
 - ✔️ An HTML-Templating Engine.
