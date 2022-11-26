@@ -10,7 +10,7 @@
 - ✔️ Fast.
 - ✔️ Written in POSIX-Compliant Shell.
 
-:warning: The parser is incomplete. Tables & code blocks will not work.
+:warning: The parser is incomplete. Tables & multiline code blocks will not work.
 
 # 📖 Installation & Usage
 
